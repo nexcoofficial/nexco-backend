@@ -100,91 +100,93 @@ app.post("/api/payment-webhook", async (req, res) => {
   try {
 
     const data = req.body;
+
+    console.log("WEBHOOK MASUK:");
+    console.log(JSON.stringify(data, null, 2));
+
+    if (
+      data.event !== "payment.received" &&
+      data.event !== "subscription.activated" &&
+      data.event !== "subscription.renewed"
+    ) {
+      return res.json({
+        success: true,
+        ignored: true
+      });
+    }
+
     const email = data.data.customer.email;
 
-console.log("WEBHOOK MASUK:");
-console.log(JSON.stringify(data, null, 2));
+    const ref = db.collection("licenses").doc(email);
 
-if (
-  data.event === "payment.received" ||
-  data.event === "subscription.activated" ||
-  data.event === "subscription.renewed"
-) {
+    const doc = await ref.get();
 
-  const email = data.data.customer.email;
+    const now = new Date();
 
-  const ref = db.collection("licenses").doc(email);
+    const expired = new Date();
+    expired.setMonth(expired.getMonth() + 1);
 
-  const doc = await ref.get();
+    let license_key = null;
 
-  const now = new Date();
+    if (doc.exists) {
 
-  const expired = new Date();
-  expired.setMonth(expired.getMonth() + 1);
+      const oldData = doc.data();
 
-  let license_key;
+      license_key = oldData.license_key;
 
-if (doc.exists) {
+      await ref.update({
+        expired_at: expired.toISOString(),
+        active: true
+      });
 
-  const oldData = doc.data();
+      console.log("USER LAMA DIPERPANJANG");
 
-  license_key = oldData.license_key;
+    } else {
 
-  await ref.update({
-    expired_at: expired.toISOString(),
-    active: true
-  });
+      license_key =
+        "NEXCO-" +
+        crypto.randomBytes(4).toString("hex").toUpperCase();
 
-  console.log("USER LAMA DIPERPANJANG");
+      await ref.set({
+        email,
+        license_key,
+        active: true,
+        created_at: now.toISOString(),
+        expired_at: expired.toISOString(),
+        active_device_id: null
+      });
 
-} else {
+      console.log("USER BARU DIBUATKAN KEY");
+      console.log("KEY:", license_key);
+    }
 
-  license_key =
-  "NEXCO-" +
-  crypto.randomBytes(4).toString("hex").toUpperCase();
+    const response = await resend.emails.send({
+      from: "onboarding@resend.dev",
+      to: email,
+      subject: "License Key Nexco Workspace",
+      html: `
+        <h2>Selamat Datang di Nexco Workspace 🚀</h2>
 
-  await ref.set({
-    email,
-    license_key,
-    active: true,
-    created_at: now.toISOString(),
-    expired_at: expired.toISOString(),
-    active_device_id: null
-  });
+        <p>Berikut license key anda:</p>
 
-  console.log("USER BARU DIBUATKAN KEY");
-  console.log("KEY:", license_key);
-}
-}
-const finalKey = license_key || data.license_key;
+        <h1>${license_key}</h1>
 
-const response = await resend.emails.send({
-  from: "onboarding@resend.dev",
-  to: email,
-  subject: "License Key Nexco Workspace",
-  html: `
-    <h2>Selamat Datang di Nexco Workspace 🚀</h2>
+        <p>Masa aktif sampai:</p>
 
-    <p>Berikut license key anda:</p>
+        <b>${expired.toDateString()}</b>
 
-    <h1>${finalKey}</h1>
+        <br><br>
 
-    <p>Masa aktif sampai:</p>
+        <p>Simpan license ini baik-baik.</p>
+      `
+    });
 
-    <b>${expired.toDateString()}</b>
+    console.log("EMAIL TERKIRIM");
+    console.log(response);
 
-    <br><br>
-
-    <p>Simpan license ini baik-baik.</p>
-  `
-});
-
-console.log("EMAIL TERKIRIM");
-console.log(response);
-
-return res.json({
-  success: true
-});
+    return res.json({
+      success: true
+    });
 
   } catch (err) {
 
