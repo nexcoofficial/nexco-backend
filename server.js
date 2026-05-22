@@ -41,7 +41,15 @@ app.post("/api/login", async (req, res) => {
         message: "LICENSE TIDAK AKTIF",
       });
     }
+const now = new Date();
+const expired = new Date(data.expired_at);
 
+if (now > expired) {
+  return res.status(403).json({
+    success: false,
+    message: "LICENSE EXPIRED",
+  });
+}
     if (data.email !== email) {
       return res.status(403).json({
         success: false,
