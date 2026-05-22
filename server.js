@@ -3,6 +3,7 @@ const admin = require("firebase-admin");
 const cors = require("cors");
 const axios = require("axios");
 const crypto = require("crypto");
+const { Resend } = require("resend");
 
 const serviceAccount = require("/etc/secrets/firebase-key.json");
 
@@ -11,6 +12,7 @@ admin.initializeApp({
 });
 
 const db = admin.firestore();
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const app = express();
 
@@ -142,6 +144,29 @@ if (
     console.log("KEY:", license_key);
   }
 }
+const response = await resend.emails.send({
+  from: "onboarding@resend.dev",
+  to: email,
+  subject: "License Key Nexco Workspace",
+  html: `
+    <h2>Selamat Datang di Nexco Workspace 🚀</h2>
+
+    <p>Berikut license key anda:</p>
+
+    <h1>${license_key}</h1>
+
+    <p>Masa aktif sampai:</p>
+
+    <b>${expired.toDateString()}</b>
+
+    <br><br>
+
+    <p>Simpan license ini baik-baik.</p>
+  `
+});
+
+console.log("EMAIL TERKIRIM");
+console.log(response);
 
 return res.json({
   success: true
