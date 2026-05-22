@@ -24,27 +24,27 @@ app.get("/", (req, res) => {
 });
 
 app.post("/api/login", async (req, res) => {
+
   try {
+
     const { email, license_key, device_id } = req.body;
 
-const key = license_key;
-
     const snapshot = await db.collection("licenses")
-.where("license_key", "==", key)
-.where("email", "==", email)
-.limit(1)
-.get();
+      .where("license_key", "==", license_key)
+      .where("email", "==", email)
+      .limit(1)
+      .get();
 
-if (snapshot.empty) {
-  return res.status(404).json({
-    success: false,
-    message: "LICENSE TIDAK DITEMUKAN"
-  });
-}
+    if (snapshot.empty) {
+      return res.status(404).json({
+        success: false,
+        message: "LICENSE TIDAK DITEMUKAN"
+      });
+    }
 
-const doc = snapshot.docs[0];
-const data = doc.data();
-const ref = doc.ref;
+    const doc = snapshot.docs[0];
+    const data = doc.data();
+    const ref = doc.ref;
 
     if (!data.active) {
       return res.status(403).json({
@@ -52,19 +52,14 @@ const ref = doc.ref;
         message: "LICENSE TIDAK AKTIF",
       });
     }
-const now = new Date();
-const expired = new Date(data.expired_at);
 
-if (now > expired) {
-  return res.status(403).json({
-    success: false,
-    message: "LICENSE EXPIRED",
-  });
-}
-    if (data.email !== email) {
+    const now = new Date();
+    const expired = new Date(data.expired_at);
+
+    if (now > expired) {
       return res.status(403).json({
         success: false,
-        message: "EMAIL TIDAK SESUAI",
+        message: "LICENSE EXPIRED",
       });
     }
 
@@ -86,15 +81,20 @@ if (now > expired) {
     return res.json({
       success: true,
       message: "LOGIN BERHASIL",
+      license_key: data.license_key
     });
 
   } catch (err) {
+
     console.error(err);
+
     res.status(500).json({
       success: false,
       message: "SERVER ERROR",
     });
+
   }
+
 });
 
 app.post("/api/payment-webhook", async (req, res) => {
