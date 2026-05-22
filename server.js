@@ -2,6 +2,7 @@ const express = require("express");
 const admin = require("firebase-admin");
 const cors = require("cors");
 const axios = require("axios");
+const crypto = require("crypto");
 
 const serviceAccount = require("/etc/secrets/firebase-key.json");
 
@@ -91,12 +92,60 @@ app.post("/api/payment-webhook", async (req, res) => {
 
   try {
 
-    console.log("WEBHOOK MASUK:");
-    console.log(JSON.stringify(req.body, null, 2));
+    const data = req.body;
 
-    return res.json({
-      success: true
+console.log("WEBHOOK MASUK:");
+console.log(JSON.stringify(data, null, 2));
+
+if (
+  data.event === "payment.received" ||
+  data.event === "subscription.activated" ||
+  data.event === "subscription.renewed"
+) {
+
+  const email = data.data.customer.email;
+
+  const ref = db.collection("licenses").doc(email);
+
+  const doc = await ref.get();
+
+  const now = new Date();
+
+  const expired = new Date();
+  expired.setMonth(expired.getMonth() + 1);
+
+  if (doc.exists) {
+
+    await ref.update({
+      expired_at: expired.toISOString(),
+      active: true
     });
+
+    console.log("USER LAMA DIPERPANJANG");
+
+  } else {
+
+    const license_key =
+      "NEXCO-" +
+      crypto.randomBytes(4).toString("hex").toUpperCase();
+
+    await ref.set({
+      email,
+      license_key,
+      active: true,
+      created_at: now.toISOString(),
+      expired_at: expired.toISOString(),
+      active_device_id: null
+    });
+
+    console.log("USER BARU DIBUATKAN KEY");
+    console.log("KEY:", license_key);
+  }
+}
+
+return res.json({
+  success: true
+});
 
   } catch (err) {
 
