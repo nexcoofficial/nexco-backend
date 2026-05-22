@@ -1,6 +1,7 @@
 const express = require("express");
 const admin = require("firebase-admin");
 const cors = require("cors");
+const axios = require("axios");
 
 const serviceAccount = require("/etc/secrets/firebase-key.json");
 
@@ -93,24 +94,47 @@ app.post("/api/create-payment", async (req, res) => {
     if (!email) {
       return res.status(400).json({
         success: false,
-        message: "EMAIL WAJIB",
+        message: "EMAIL WAJIB"
       });
     }
 
+    let amount = 50000;
+
+    if (package_name === "pro") {
+      amount = 150000;
+    }
+
+    const response = await axios.post(
+      "https://api.scalev.id/v1/payments",
+      {
+        amount: amount,
+        method: "qris",
+        customer_email: email,
+        reference_id: "NEXCO-" + Date.now(),
+        description: "Pembelian Paket " + package_name
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.SCALEV_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
     return res.json({
       success: true,
-      message: "CREATE PAYMENT SUCCESS",
-      email,
-      package_name: package_name || "basic"
+      payment: response.data
     });
 
   } catch (err) {
-    console.error(err);
+
+    console.log(err.response?.data || err);
 
     return res.status(500).json({
       success: false,
-      message: "SERVER ERROR",
+      message: "CREATE PAYMENT GAGAL"
     });
+
   }
 });
 const PORT = process.env.PORT || 3000;
