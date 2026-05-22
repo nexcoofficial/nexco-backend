@@ -79,14 +79,15 @@ if (now > expired) {
 
   } catch (err) {
     console.error(err);
-
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: "SERVER ERROR",
     });
   }
 });
 
-app.listen(3000, () => {
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
   console.log("API RUNNING");
 });
