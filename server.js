@@ -27,6 +27,8 @@ app.post("/api/login", async (req, res) => {
 
   try {
 
+    console.log(req.body);
+
     const { email, license_key, device_id } = req.body;
 
     const snapshot = await db.collection("licenses")
