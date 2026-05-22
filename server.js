@@ -128,7 +128,7 @@ app.post("/api/create-payment", async (req, res) => {
 
   } catch (err) {
 
-    console.log(err.response?.data || err);
+    console.log(JSON.stringify(err.response?.data || err, null, 2));
 
     return res.status(500).json({
       success: false,
