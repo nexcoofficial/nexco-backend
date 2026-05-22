@@ -86,57 +86,30 @@ if (now > expired) {
     });
   }
 });
-app.post("/api/create-payment", async (req, res) => {
+
+app.post("/api/payment-webhook", async (req, res) => {
+
   try {
 
-    const { email, package_name } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: "EMAIL WAJIB"
-      });
-    }
-
-    let amount = 50000;
-
-    if (package_name === "pro") {
-      amount = 150000;
-    }
-
-    const response = await axios.post(
-      "https://api.scalev.id/v1/payments",
-      {
-        amount: amount,
-        method: "qris",
-        customer_email: email,
-        reference_id: "NEXCO-" + Date.now(),
-        description: "Pembelian Paket " + package_name
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.SCALEV_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
+    console.log("WEBHOOK MASUK:");
+    console.log(JSON.stringify(req.body, null, 2));
 
     return res.json({
-      success: true,
-      payment: response.data
+      success: true
     });
 
   } catch (err) {
 
-    console.log(JSON.stringify(err.response?.data || err, null, 2));
+    console.log(err);
 
     return res.status(500).json({
-      success: false,
-      message: "CREATE PAYMENT GAGAL"
+      success: false
     });
 
   }
+
 });
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
