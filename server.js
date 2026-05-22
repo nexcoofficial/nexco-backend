@@ -27,17 +27,22 @@ app.post("/api/login", async (req, res) => {
   try {
     const { email, key, device_id } = req.body;
 
-    const ref = db.collection("licenses").doc(key);
-    const snap = await ref.get();
+    const snapshot = await db.collection("licenses")
+.where("license_key", "==", key)
+.where("email", "==", email)
+.limit(1)
+.get();
 
-    if (!snap.exists) {
-      return res.status(404).json({
-        success: false,
-        message: "LICENSE TIDAK DITEMUKAN",
-      });
-    }
+if (snapshot.empty) {
+  return res.status(404).json({
+    success: false,
+    message: "LICENSE TIDAK DITEMUKAN"
+  });
+}
 
-    const data = snap.data();
+const doc = snapshot.docs[0];
+const data = doc.data();
+const ref = doc.ref;
 
     if (!data.active) {
       return res.status(403).json({
