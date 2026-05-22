@@ -117,7 +117,9 @@ if (
   const expired = new Date();
   expired.setMonth(expired.getMonth() + 1);
 
-  if (doc.exists) {
+  let license_key;
+
+if (doc.exists) {
 
     await ref.update({
       expired_at: expired.toISOString(),
@@ -128,9 +130,9 @@ if (
 
   } else {
 
-    const license_key =
-      "NEXCO-" +
-      crypto.randomBytes(4).toString("hex").toUpperCase();
+license_key =
+  "NEXCO-" +
+  crypto.randomBytes(4).toString("hex").toUpperCase();
 
     await ref.set({
       email,
