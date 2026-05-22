@@ -121,31 +121,35 @@ if (
 
 if (doc.exists) {
 
-    await ref.update({
-      expired_at: expired.toISOString(),
-      active: true
-    });
+  const oldData = doc.data();
 
-    console.log("USER LAMA DIPERPANJANG");
+  license_key = oldData.license_key;
 
-  } else {
+  await ref.update({
+    expired_at: expired.toISOString(),
+    active: true
+  });
 
-license_key =
+  console.log("USER LAMA DIPERPANJANG");
+
+} else {
+
+  license_key =
   "NEXCO-" +
   crypto.randomBytes(4).toString("hex").toUpperCase();
 
-    await ref.set({
-      email,
-      license_key,
-      active: true,
-      created_at: now.toISOString(),
-      expired_at: expired.toISOString(),
-      active_device_id: null
-    });
+  await ref.set({
+    email,
+    license_key,
+    active: true,
+    created_at: now.toISOString(),
+    expired_at: expired.toISOString(),
+    active_device_id: null
+  });
 
-    console.log("USER BARU DIBUATKAN KEY");
-    console.log("KEY:", license_key);
-  }
+  console.log("USER BARU DIBUATKAN KEY");
+  console.log("KEY:", license_key);
+}
 }
 const response = await resend.emails.send({
   from: "onboarding@resend.dev",
