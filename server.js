@@ -95,6 +95,7 @@ app.post("/api/payment-webhook", async (req, res) => {
   try {
 
     const data = req.body;
+    const email = data.data.customer.email;
 
 console.log("WEBHOOK MASUK:");
 console.log(JSON.stringify(data, null, 2));
