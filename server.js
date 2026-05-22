@@ -15,6 +15,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get("/", (req, res) => {
+  res.send("NEXCO BACKEND RUNNING 🚀");
+});
+
 app.post("/api/login", async (req, res) => {
   try {
     const { email, key, device_id } = req.body;
