@@ -163,7 +163,7 @@ app.post("/api/payment-webhook", async (req, res) => {
     }
 
     const response = await resend.emails.send({
-      from: "onboarding@resend.dev",
+      from: "reang@nexcooo.com",
       to: email,
       subject: "License Key Nexco Workspace",
       html: `
