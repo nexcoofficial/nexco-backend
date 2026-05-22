@@ -25,7 +25,9 @@ app.get("/", (req, res) => {
 
 app.post("/api/login", async (req, res) => {
   try {
-    const { email, key, device_id } = req.body;
+    const { email, license_key, device_id } = req.body;
+
+const key = license_key;
 
     const snapshot = await db.collection("licenses")
 .where("license_key", "==", key)
