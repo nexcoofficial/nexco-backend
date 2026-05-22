@@ -156,6 +156,8 @@ if (doc.exists) {
   console.log("KEY:", license_key);
 }
 }
+const finalKey = license_key || data.license_key;
+
 const response = await resend.emails.send({
   from: "onboarding@resend.dev",
   to: email,
@@ -165,7 +167,7 @@ const response = await resend.emails.send({
 
     <p>Berikut license key anda:</p>
 
-    <h1>${license_key}</h1>
+    <h1>${finalKey}</h1>
 
     <p>Masa aktif sampai:</p>
 
