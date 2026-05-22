@@ -164,26 +164,39 @@ app.post("/api/payment-webhook", async (req, res) => {
       console.log("KEY:", license_key);
     }
 
-    const response = await resend.emails.send({
-      from: "reang@nexcooo.com",
-      to: email,
-      subject: "License Key Nexco Workspace",
-      html: `
-        <h2>Selamat Datang di Nexco Workspace 🚀</h2>
+const response = await resend.emails.send({
+  from: "reang@nexcooo.com",
+  to: email,
+  subject: "License Key Nexco Workspace",
 
-        <p>Berikut license key anda:</p>
+  text: `
+Selamat Datang di Nexco Workspace
 
-        <h1>${license_key}</h1>
+License Key:
+${license_key}
 
-        <p>Masa aktif sampai:</p>
+Masa aktif sampai:
+${expired.toDateString()}
 
-        <b>${expired.toDateString()}</b>
+Simpan license ini baik-baik.
+  `,
 
-        <br><br>
+  html: `
+    <h2>Selamat Datang di Nexco Workspace 🚀</h2>
 
-        <p>Simpan license ini baik-baik.</p>
-      `
-    });
+    <p>Berikut license key anda:</p>
+
+    <h1>${license_key}</h1>
+
+    <p>Masa aktif sampai:</p>
+
+    <b>${expired.toDateString()}</b>
+
+    <br><br>
+
+    <p>Simpan license ini baik-baik.</p>
+  `
+});
 
     console.log("EMAIL TERKIRIM");
     console.log(response);
