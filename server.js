@@ -85,7 +85,34 @@ if (now > expired) {
     });
   }
 });
+app.post("/api/create-payment", async (req, res) => {
+  try {
 
+    const { email, package_name } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "EMAIL WAJIB",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "CREATE PAYMENT SUCCESS",
+      email,
+      package_name: package_name || "basic"
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      success: false,
+      message: "SERVER ERROR",
+    });
+  }
+});
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
