@@ -17,7 +17,13 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    if (req.originalUrl.startsWith("/api/payment-webhook")) {
+      req.rawBody = Buffer.from(buf);
+    }
+  },
+}));
 
 app.get("/", (req, res) => {
   res.send("NEXCO BACKEND RUNNING 🚀");
@@ -234,10 +240,43 @@ async function processMatchedPayment(orderId) {
 
 app.post("/api/payment-webhook", async (req, res) => {
   try {
+    const signingSecret = process.env.SCALEV_WEBHOOK_SIGNING_SECRET;
+    const signature = req.get("X-Scalev-Hmac-Sha256");
+
+    if (!signingSecret || !signature || !Buffer.isBuffer(req.rawBody)) {
+      console.warn("WEBHOOK DITOLAK: SIGNATURE ATAU SECRET TIDAK TERSEDIA");
+      return res.status(401).json({ success: false, message: "Invalid webhook signature" });
+    }
+
+    const expectedSignature = crypto
+      .createHmac("sha256", signingSecret)
+      .update(req.rawBody)
+      .digest();
+
+    let receivedSignature;
+    try {
+      receivedSignature = Buffer.from(signature, "base64");
+    } catch {
+      return res.status(401).json({ success: false, message: "Invalid webhook signature" });
+    }
+
+    if (
+      receivedSignature.length !== expectedSignature.length ||
+      !crypto.timingSafeEqual(receivedSignature, expectedSignature)
+    ) {
+      console.warn("WEBHOOK DITOLAK: SIGNATURE TIDAK COCOK");
+      return res.status(401).json({ success: false, message: "Invalid webhook signature" });
+    }
+
     const event = req.body?.event;
     const data = req.body?.data;
 
     console.log("WEBHOOK MASUK:", event);
+
+    // Scalev sends this initial test event when an endpoint is saved.
+    if (event === "business.test_event") {
+      return res.status(200).json({ success: true, test: true });
+    }
 
     if (!event || !data || typeof data !== "object" || !data.id) {
       console.warn("WEBHOOK DIABAIKAN: EVENT/PAYLOAD/ID TIDAK VALID");
