@@ -216,8 +216,27 @@ async function processMatchedPayment(orderId) {
     return { dataError: true };
   }
 
-  const refreshedPayment = await paymentRef.get();
-  if (refreshedPayment.data()?.email_sent === true) return { duplicate: true };
+  // Claim email delivery so concurrent duplicate webhook requests do not send
+  // the same license email at the same time. A stale claim can be retried after 5 minutes.
+  let maySendEmail = false;
+  await db.runTransaction(async (transaction) => {
+    const freshPayment = await transaction.get(paymentRef);
+    const freshData = freshPayment.exists ? freshPayment.data() : {};
+    if (freshData.email_sent === true) return;
+
+    const claimedAt = freshData.email_sending_at ? new Date(freshData.email_sending_at) : null;
+    const claimIsFresh = claimedAt && !Number.isNaN(claimedAt.getTime()) &&
+      (Date.now() - claimedAt.getTime() < 5 * 60 * 1000);
+    if (claimIsFresh) return;
+
+    transaction.set(paymentRef, {
+      email_sending_at: new Date().toISOString(),
+      email_error: null,
+    }, { merge: true });
+    maySendEmail = true;
+  });
+
+  if (!maySendEmail) return { emailInProgress: true };
 
   const response = await resend.emails.send({
     from: "reang@nexcooo.com",
@@ -229,11 +248,19 @@ async function processMatchedPayment(orderId) {
 
   if (response?.error) {
     console.error("EMAIL LISENSI GAGAL", response.error);
-    await paymentRef.set({ email_error: String(response.error.message || response.error) }, { merge: true });
+    await paymentRef.set({
+      email_error: String(response.error.message || response.error),
+      email_sending_at: null,
+    }, { merge: true });
     return { emailFailed: true };
   }
 
-  await paymentRef.set({ email_sent: true, email_sent_at: new Date().toISOString() }, { merge: true });
+  await paymentRef.set({
+    email_sent: true,
+    email_sent_at: new Date().toISOString(),
+    email_sending_at: null,
+    email_error: null,
+  }, { merge: true });
   console.log("LICENSE DIPROSES DAN EMAIL TERKIRIM", orderId);
   return { success: true };
 }
