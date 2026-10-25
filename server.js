@@ -245,12 +245,24 @@ app.post("/api/payment-webhook", async (req, res) => {
     }
 
     if (event === "order.created" || event === "order.epayment_created" || event === "order.updated") {
-      await db.collection("scalev_orders").doc(String(data.id)).set({
+      const orderRef = db.collection("scalev_orders").doc(String(data.id));
+      const existingOrder = await orderRef.get();
+      const incomingOrderLines = getOrderLines(data);
+      const existingOrderData = existingOrder.exists ? existingOrder.data() : {};
+      // Some order update payloads may omit orderlines. Never erase previously
+      // captured product variants with an empty array.
+      const orderLinesToStore = incomingOrderLines.length > 0
+        ? incomingOrderLines
+        : getOrderLines(existingOrderData);
+
+      await orderRef.set({
         scalev_id: String(data.id),
-        order_id: data.order_id || null,
-        orderlines: getOrderLines(data),
-        destination_address: data.destination_address || null,
-        customer: data.customer || null,
+        order_id: data.order_id || existingOrderData.order_id || null,
+        orderlines: orderLinesToStore,
+        destination_address: data.destination_address || existingOrderData.destination_address || null,
+        customer: data.customer || existingOrderData.customer || null,
+        last_event: event,
+        last_event_unique_id: req.body?.unique_id || null,
         received_at: new Date().toISOString(),
       }, { merge: true });
 
@@ -274,6 +286,8 @@ app.post("/api/payment-webhook", async (req, res) => {
         payment_status: paymentStatus,
         customer: data.customer || null,
         destination_address: data.destination_address || null,
+        last_event: event,
+        last_event_unique_id: req.body?.unique_id || null,
         received_at: new Date().toISOString(),
       }, { merge: true });
 
