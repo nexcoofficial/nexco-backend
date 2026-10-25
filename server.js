@@ -274,7 +274,7 @@ app.post("/api/payment-webhook", async (req, res) => {
       return res.json({ success: true, orderStored: true });
     }
 
-    if (event === "payment.received") {
+    if (event === "payment.received" || event === "order.payment_status_changed") {
       const paymentStatus = String(data.payment_status || "").toLowerCase();
       if (!["paid", "settled"].includes(paymentStatus)) {
         return res.json({ success: true, ignored: true, reason: "payment_not_paid" });
