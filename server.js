@@ -99,122 +99,187 @@ app.post("/api/login", async (req, res) => {
 
 });
 
-app.post("/api/payment-webhook", async (req, res) => {
+const NEXCO_VARIANT_ID = "variant_HdaMLnpMdz9iJfFGEvRlJurm";
 
-  try {
+function getOrderLines(orderData) {
+  return Array.isArray(orderData?.orderlines) ? orderData.orderlines : [];
+}
 
-    const data = req.body;
+function orderContainsNexco(orderData) {
+  return getOrderLines(orderData).some(
+    (line) => line?.variant_unique_id === NEXCO_VARIANT_ID
+  );
+}
 
-    console.log("WEBHOOK MASUK:");
-    console.log(JSON.stringify(data, null, 2));
+function getPaymentEmail(paymentData, orderData) {
+  const candidates = [
+    paymentData?.customer?.email,
+    paymentData?.destination_address?.email,
+    orderData?.destination_address?.email,
+    orderData?.customer?.email,
+  ];
+  return candidates.find((value) => typeof value === "string" && value.includes("@"))?.trim().toLowerCase() || null;
+}
 
-    if (
-      data.event !== "payment.received" &&
-      data.event !== "subscription.activated" &&
-      data.event !== "subscription.renewed"
-    ) {
-      return res.json({
-        success: true,
-        ignored: true
-      });
-    }
+async function processMatchedPayment(orderId) {
+  const orderRef = db.collection("scalev_orders").doc(orderId);
+  const paymentRef = db.collection("scalev_payments").doc(orderId);
+  const orderSnap = await orderRef.get();
+  const paymentSnap = await paymentRef.get();
 
-    const email = data.data.customer.email;
+  if (!orderSnap.exists || !paymentSnap.exists) return { waiting: true };
 
-    const ref = db.collection("licenses").doc(email);
+  const orderData = orderSnap.data();
+  const paymentData = paymentSnap.data();
+  if (paymentData.processed === true) return { duplicate: true };
 
-    const doc = await ref.get();
-
-    const now = new Date();
-
-    const expired = new Date();
-    expired.setMonth(expired.getMonth() + 1);
-
-    let license_key = null;
-
-    if (doc.exists) {
-
-      const oldData = doc.data();
-
-      license_key = oldData.license_key;
-
-      await ref.update({
-        expired_at: expired.toISOString(),
-        active: true
-      });
-
-      console.log("USER LAMA DIPERPANJANG");
-
-    } else {
-
-      license_key =
-        "NEXCO-" +
-        crypto.randomBytes(4).toString("hex").toUpperCase();
-
-      await ref.set({
-        email,
-        license_key,
-        active: true,
-        created_at: now.toISOString(),
-        expired_at: expired.toISOString(),
-        active_device_id: null
-      });
-
-      console.log("USER BARU DIBUATKAN KEY");
-      console.log("KEY:", license_key);
-    }
-
-const response = await resend.emails.send({
-  from: "reang@nexcooo.com",
-  to: email,
-  subject: "License Key Nexco Workspace",
-
-  text: `
-Selamat Datang di Nexco Workspace
-
-License Key:
-${license_key}
-
-Masa aktif sampai:
-${expired.toDateString()}
-
-Simpan license ini baik-baik.
-  `,
-
-  html: `
-    <h2>Selamat Datang di Nexco Workspace 🚀</h2>
-
-    <p>Berikut license key anda:</p>
-
-    <h1>${license_key}</h1>
-
-    <p>Masa aktif sampai:</p>
-
-    <b>${expired.toDateString()}</b>
-
-    <br><br>
-
-    <p>Simpan license ini baik-baik.</p>
-  `
-});
-
-    console.log("EMAIL TERKIRIM");
-    console.log(response);
-
-    return res.json({
-      success: true
-    });
-
-  } catch (err) {
-
-    console.log(err);
-
-    return res.status(500).json({
-      success: false
-    });
-
+  if (!orderContainsNexco(orderData)) {
+    await paymentRef.set({
+      processed: true,
+      ignored: true,
+      reason: "product_variant_not_nexco",
+      processed_at: new Date().toISOString(),
+    }, { merge: true });
+    console.log("PEMBAYARAN DIABAIKAN: BUKAN VARIAN NEXCO", orderId);
+    return { ignored: true };
   }
 
+  const email = getPaymentEmail(paymentData, orderData);
+  if (!email) {
+    console.error("PEMBAYARAN NEXCO BELUM DIPROSES: EMAIL TIDAK DITEMUKAN", orderId);
+    return { missingEmail: true };
+  }
+
+  const licenseRef = db.collection("licenses").doc(email);
+  const now = new Date();
+  let licenseKey;
+  let expiryIso;
+  let alreadyProcessed = false;
+
+  await db.runTransaction(async (transaction) => {
+    const freshPayment = await transaction.get(paymentRef);
+    if (freshPayment.exists && freshPayment.data().processed === true) {
+      alreadyProcessed = true;
+      licenseKey = freshPayment.data().license_key || null;
+      expiryIso = freshPayment.data().expired_at || null;
+      return;
+    }
+
+    const licenseSnap = await transaction.get(licenseRef);
+    const oldData = licenseSnap.exists ? licenseSnap.data() : null;
+    licenseKey = oldData?.license_key || (
+      "NEXCO-" + crypto.randomBytes(4).toString("hex").toUpperCase()
+    );
+
+    const oldExpiry = oldData?.expired_at ? new Date(oldData.expired_at) : null;
+    const baseDate = oldExpiry && !Number.isNaN(oldExpiry.getTime()) && oldExpiry > now
+      ? oldExpiry
+      : now;
+    const newExpiry = new Date(baseDate);
+    newExpiry.setMonth(newExpiry.getMonth() + 1);
+    expiryIso = newExpiry.toISOString();
+
+    const licenseData = {
+      email,
+      license_key: licenseKey,
+      active: true,
+      expired_at: expiryIso,
+      active_device_id: oldData?.active_device_id ?? null,
+      updated_at: now.toISOString(),
+    };
+    if (!licenseSnap.exists) licenseData.created_at = now.toISOString();
+    transaction.set(licenseRef, licenseData, { merge: true });
+    transaction.set(paymentRef, {
+      processed: true,
+      ignored: false,
+      email,
+      license_key: licenseKey,
+      expired_at: expiryIso,
+      processed_at: now.toISOString(),
+    }, { merge: true });
+  });
+
+  if (alreadyProcessed) return { duplicate: true };
+
+  const response = await resend.emails.send({
+    from: "reang@nexcooo.com",
+    to: email,
+    subject: "License Key Nexco Workspace",
+    text: "Selamat Datang di Nexco Workspace\n\nLicense Key:\n" + licenseKey + "\n\nMasa aktif sampai:\n" + new Date(expiryIso).toDateString() + "\n\nSimpan license ini baik-baik.",
+    html: "<h2>Selamat Datang di Nexco Workspace</h2><p>Berikut license key Anda:</p><h1>" + licenseKey + "</h1><p>Masa aktif sampai:</p><b>" + new Date(expiryIso).toDateString() + "</b><br><br><p>Simpan license ini baik-baik.</p>",
+  });
+
+  if (response?.error) {
+    console.error("EMAIL LISENSI GAGAL", response.error);
+    await paymentRef.set({ email_error: String(response.error.message || response.error) }, { merge: true });
+    return { emailFailed: true };
+  }
+
+  await paymentRef.set({ email_sent: true, email_sent_at: new Date().toISOString() }, { merge: true });
+  console.log("LICENSE DIPROSES DAN EMAIL TERKIRIM", orderId);
+  return { success: true };
+}
+
+app.post("/api/payment-webhook", async (req, res) => {
+  try {
+    const event = req.body?.event;
+    const data = req.body?.data;
+
+    console.log("WEBHOOK MASUK:", event);
+
+    if (!event || !data || typeof data !== "object" || !data.id) {
+      console.warn("WEBHOOK DIABAIKAN: EVENT/PAYLOAD/ID TIDAK VALID");
+      return res.status(400).json({ success: false, message: "Invalid webhook payload" });
+    }
+
+    if (event === "order.created" || event === "order.epayment_created" || event === "order.updated") {
+      await db.collection("scalev_orders").doc(String(data.id)).set({
+        scalev_id: String(data.id),
+        order_id: data.order_id || null,
+        orderlines: getOrderLines(data),
+        destination_address: data.destination_address || null,
+        customer: data.customer || null,
+        received_at: new Date().toISOString(),
+      }, { merge: true });
+
+      const pendingPayment = await db.collection("scalev_payments").doc(String(data.id)).get();
+      if (pendingPayment.exists && ["paid", "settled"].includes(String(pendingPayment.data()?.payment_status || "").toLowerCase())) {
+        const result = await processMatchedPayment(String(data.id));
+        return res.json({ success: true, orderStored: true, paymentResult: result });
+      }
+      return res.json({ success: true, orderStored: true });
+    }
+
+    if (event === "payment.received") {
+      const paymentStatus = String(data.payment_status || "").toLowerCase();
+      if (!["paid", "settled"].includes(paymentStatus)) {
+        return res.json({ success: true, ignored: true, reason: "payment_not_paid" });
+      }
+
+      const orderId = String(data.id);
+      await db.collection("scalev_payments").doc(orderId).set({
+        scalev_id: orderId,
+        payment_status: paymentStatus,
+        customer: data.customer || null,
+        destination_address: data.destination_address || null,
+        received_at: new Date().toISOString(),
+      }, { merge: true });
+
+      const result = await processMatchedPayment(orderId);
+      return res.json({ success: true, paymentStored: true, paymentResult: result });
+    }
+
+    // Fail closed until subscription events are mapped to a verified order and variant.
+    if (event === "subscription.activated" || event === "subscription.renewed") {
+      console.warn("SUBSCRIPTION EVENT BELUM DIPROSES: PERLU PEMETAAN PRODUK", event);
+      return res.json({ success: true, ignored: true, reason: "subscription_product_not_verified" });
+    }
+
+    return res.json({ success: true, ignored: true, reason: "unsupported_event" });
+  } catch (err) {
+    console.error("WEBHOOK ERROR:", err);
+    return res.status(500).json({ success: false });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
