@@ -131,7 +131,10 @@ async function processMatchedPayment(orderId) {
 
   const orderData = orderSnap.data();
   const paymentData = paymentSnap.data();
-  if (paymentData.processed === true) return { duplicate: true };
+
+  // Already ignored or fully completed payments must not be processed again.
+  if (paymentData.processed === true && paymentData.ignored === true) return { ignored: true };
+  if (paymentData.processed === true && paymentData.email_sent === true) return { duplicate: true };
 
   if (!orderContainsNexco(orderData)) {
     await paymentRef.set({
@@ -158,10 +161,13 @@ async function processMatchedPayment(orderId) {
 
   await db.runTransaction(async (transaction) => {
     const freshPayment = await transaction.get(paymentRef);
-    if (freshPayment.exists && freshPayment.data().processed === true) {
+    const freshPaymentData = freshPayment.exists ? freshPayment.data() : {};
+    if (freshPaymentData.processed === true) {
+      // License already granted. Reuse its stored details to retry a failed email
+      // without extending the license a second time.
       alreadyProcessed = true;
-      licenseKey = freshPayment.data().license_key || null;
-      expiryIso = freshPayment.data().expired_at || null;
+      licenseKey = freshPaymentData.license_key || null;
+      expiryIso = freshPaymentData.expired_at || null;
       return;
     }
 
@@ -199,7 +205,13 @@ async function processMatchedPayment(orderId) {
     }, { merge: true });
   });
 
-  if (alreadyProcessed) return { duplicate: true };
+  if (alreadyProcessed && (!licenseKey || !expiryIso)) {
+    console.error("PEMBAYARAN SUDAH DITANDAI DIPROSES TAPI DATA LISENSI KURANG", orderId);
+    return { dataError: true };
+  }
+
+  const refreshedPayment = await paymentRef.get();
+  if (refreshedPayment.data()?.email_sent === true) return { duplicate: true };
 
   const response = await resend.emails.send({
     from: "reang@nexcooo.com",
