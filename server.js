@@ -244,6 +244,9 @@ async function processMatchedPayment(orderId) {
     subject: "License Key Nexco Workspace",
     text: "Selamat Datang di Nexco Workspace\n\nLicense Key:\n" + licenseKey + "\n\nMasa aktif sampai:\n" + new Date(expiryIso).toDateString() + "\n\nSimpan license ini baik-baik.",
     html: "<h2>Selamat Datang di Nexco Workspace</h2><p>Berikut license key Anda:</p><h1>" + licenseKey + "</h1><p>Masa aktif sampai:</p><b>" + new Date(expiryIso).toDateString() + "</b><br><br><p>Simpan license ini baik-baik.</p>",
+  }, {
+    // Stable key lets Resend deduplicate retries for the same paid order.
+    idempotencyKey: "nexco-license-" + orderId,
   });
 
   if (response?.error) {
